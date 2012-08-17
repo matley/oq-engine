@@ -754,6 +754,11 @@ class HazardCalculation(djm.Model):
                             kwargs[field] = wkt_fmt % ', '.join(points)
         super(HazardCalculation, self).__init__(*args, **kwargs)
 
+    def individual_curves_per_location(self):
+        realizations_nr = self.ltrealization_set.count()
+        imt_nr = len(self.intensity_measure_types_and_levels)
+        return realizations_nr * imt_nr
+
     def points_to_compute(self):
         """
         Generate a :class:`~nhlib.geo.mesh.Mesh` of points. These points
@@ -1072,6 +1077,29 @@ class HazardCurve(djm.Model):
         db_table = 'hzrdr\".\"hazard_curve'
 
 
+class HazardCurveDataManager(djm.Manager):
+    def individual_curves_for_job(self, job, imt):
+        query_args = {'hazard_curve__statistics__isnull': True,
+                      'hazard_curve__output__oq_job': job,
+                      'hazard_curve__imt': imt,
+                      'hazard_curve__output__output_type': "hazard_curve"}
+        queryset = self.filter(**query_args)
+        return queryset
+
+    def individual_curves_for_job_ordered(self, job, imt):
+        return self.individual_curves_for_job(job, imt).order_by('location')
+
+    def individual_curves_for_job_nr(self, job, imt):
+        return self.individual_curves_for_job(job, imt).count()
+
+    def individual_curves_in_chunks(self, job, imt, block_size):
+        curve_nr = self.individual_curves_for_job_nr(job, imt)
+        ranges = xrange(0, curve_nr, block_size)
+
+        for offset in ranges:
+            yield (self, job, imt, offset, block_size)
+
+
 class HazardCurveData(djm.Model):
     '''
     Hazard Curve data
@@ -1082,6 +1110,8 @@ class HazardCurveData(djm.Model):
     hazard_curve = djm.ForeignKey('HazardCurve')
     poes = fields.FloatArrayField()
     location = djm.PointField(srid=4326)
+
+    objects = HazardCurveDataManager()
 
     class Meta:
         db_table = 'hzrdr\".\"hazard_curve_data'

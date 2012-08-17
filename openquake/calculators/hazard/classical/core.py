@@ -45,6 +45,7 @@ from openquake.job.validation import MIN_SINT_32
 from openquake.utils import config
 from openquake.utils import stats
 from openquake.utils import tasks as utils_tasks
+from post_processing import PostProcessor
 
 #: Default Spectral Acceleration damping. At the moment, this is not
 #: configurable.
@@ -533,9 +534,12 @@ class ClassicalHazardCalculator(base.CalculatorNext):
             lt_realization__hazard_calculation=hc.id).delete()
         models.SiteData.objects.filter(hazard_calculation=hc.id).delete()
 
+    def post_process(self):
+        post_processor = PostProcessor(self.job)
+        post_processor.initialize()
+        post_processor.execute()
 
-# Silencing 'Too many local variables'
-# pylint: disable=R0914
+
 @utils_tasks.oqtask
 @stats.progress_indicator('h')
 def hazard_curves(job_id, lt_rlz_id, src_ids):
