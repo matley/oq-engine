@@ -27,6 +27,7 @@ Model representations of the OpenQuake DB tables.
 '''
 
 import os
+import re
 
 from collections import namedtuple
 from datetime import datetime
@@ -40,6 +41,10 @@ from shapely import wkt
 
 from openquake.db import fields
 
+
+#: Default Spectral Acceleration damping. At the moment, this is not
+#: configurable.
+DEFAULT_SA_DAMPING = 5.0
 
 VS30_TYPE_CHOICES = (
    (u"measured", u"Value obtained from on-site measurements"),
@@ -976,6 +981,14 @@ class OqJobProfile(djm.Model):
         db_table = 'uiapi\".\"oq_job_profile'
 
 
+class OutputManager(djm.Manager):
+    def create_output(self, job, display_name, output_type="hazard_curve"):
+        return self.create(job=job,
+                           owner=job.owner,
+                           display_name=display_name,
+                           output_type=output_type)
+
+
 class Output(djm.Model):
     '''
     A single artifact which is a result of an OpenQuake job.
@@ -1001,6 +1014,8 @@ class Output(djm.Model):
     )
     output_type = djm.TextField(choices=OUTPUT_TYPE_CHOICES)
     last_update = djm.DateTimeField(editable=False, default=datetime.utcnow)
+
+    objects = OutputManager()
 
     def __str__(self):
         return "%d||%s||%s" % (self.id, self.output_type, self.display_name)
@@ -1053,6 +1068,40 @@ class HazardMapData(djm.Model):
         db_table = 'hzrdr\".\"hazard_map_data'
 
 
+def parse_imt(imt):
+    """
+    Given an intensity measure type in long form (with attributes),
+    return the intensity measure type, the sa_period and sa_damping
+    """
+    if 'SA' in imt:
+        match = re.match(r'^SA\(([^)]+?)\)$', imt)
+        sa_period = float(match.group(1))
+        sa_damping = DEFAULT_SA_DAMPING
+        hc_im_type = 'SA'  # don't include the period
+    else:
+        hc_im_type = imt
+    return hc_im_type, sa_period, sa_damping
+
+
+class HazardCurveManager(djm.Manager):
+    def create_aggregate_curve(self, imt, output, statistics="mean"):
+        """
+        Here imt is given in long form. e.g. SA(10)
+        """
+        hc = output.job.hazard_calculation
+        hc_im_type, sa_period, sa_damping = parse_imt(imt)
+        curve = self.create(output=output,
+                            lt_realization=None,
+                            investigation_time=hc.investigation_time,
+                            imt=hc_im_type,
+                            imls=hc.intensity_measure_types_and_levels[imt],
+                            statistics=statistics,
+                            quantile=None,
+                            sa_period=sa_period,
+                            sa_damping=sa_damping)
+        return curve
+
+
 class HazardCurve(djm.Model):
     '''
     Hazard Curve header information
@@ -1072,6 +1121,8 @@ class HazardCurve(djm.Model):
     quantile = djm.FloatField(null=True)
     sa_period = djm.FloatField(null=True)
     sa_damping = djm.FloatField(null=True)
+
+    objects = HazardCurveManager()
 
     class Meta:
         db_table = 'hzrdr\".\"hazard_curve'
@@ -1115,6 +1166,21 @@ class HazardCurveData(djm.Model):
 
     class Meta:
         db_table = 'hzrdr\".\"hazard_curve_data'
+
+
+class AggregateCurveManager(object):
+    def create_mean_curve(self, job, imt, location, poes):
+        output = Output.objects.create_output(
+            job=job,
+            display_name="mean curve at %s" % location.wkt)
+        curve = HazardCurve.objects.create_aggregate_curve(
+            imt=imt,
+            output=output)
+        curvedata = HazardCurveData.objects.create(
+            hazard_curve=curve,
+            poes=poes,
+            location=location)
+        return curvedata, curve, output
 
 
 class GmfData(djm.Model):

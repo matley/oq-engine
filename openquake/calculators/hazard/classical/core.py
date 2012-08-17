@@ -17,6 +17,8 @@
 Core functionality for the classical PSHA hazard calculator.
 """
 
+from __future__ import absolute_import
+
 import numpy
 import os
 import random
@@ -45,11 +47,8 @@ from openquake.job.validation import MIN_SINT_32
 from openquake.utils import config
 from openquake.utils import stats
 from openquake.utils import tasks as utils_tasks
-from post_processing import PostProcessor
+from .post_processing import PostProcessor
 
-#: Default Spectral Acceleration damping. At the moment, this is not
-#: configurable.
-DEFAULT_SA_DAMPING = 5.0
 # Routing key format string for communication between tasks and the control
 # node.
 _ROUTING_KEY_FMT = 'oq.job.%(job_id)s.htasks'
@@ -485,15 +484,7 @@ class ClassicalHazardCalculator(base.CalculatorNext):
             # create a new `HazardCurve` 'container' record for each
             # realization for each intensity measure type
             for imt, imls in im.items():
-                sa_period = None
-                sa_damping = None
-                if 'SA' in imt:
-                    match = re.match(r'^SA\(([^)]+?)\)$', imt)
-                    sa_period = float(match.group(1))
-                    sa_damping = DEFAULT_SA_DAMPING
-                    hc_im_type = 'SA'  # don't include the period
-                else:
-                    hc_im_type = imt
+                hc_im_type, sa_period, sa_damping = models.parse_imt(imt)
 
                 hco = models.Output(
                     owner=hc.owner,
@@ -827,7 +818,7 @@ def _imt_to_nhlib(imt):
     if 'SA' in imt:
         match = re.match(r'^SA\(([^)]+?)\)$', imt)
         period = float(match.group(1))
-        return nhlib.imt.SA(period, DEFAULT_SA_DAMPING)
+        return nhlib.imt.SA(period, models.DEFAULT_SA_DAMPING)
     else:
         imt_class = getattr(nhlib.imt, imt)
         return imt_class()
