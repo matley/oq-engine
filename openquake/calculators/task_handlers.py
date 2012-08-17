@@ -17,28 +17,39 @@
 Concrete classes to manage task queueing.
 """
 
-import celery
+from celery import registry
+from celery.task import task, Task
+from celery.task.sets import TaskSet
 
 
-class CeleryTask(celery.task.base.Task):
-    def __init__(self, delegate):
-        self.delegate = delegate
-
-    def run(self, *args, **kwargs):
-        self.delegate.run(*args, **kwargs)
+@task
+class CeleryTask(Task):
+    def run(self, task_cls):
+        return task_cls.run()
+celery_task = registry.tasks[CeleryTask.name]
 
 
 class CeleryTaskHandler(object):
     def __init__(self):
-        self.taskset = celery.task.sets.TaskSet()
+        self._tasks = []
+        self._taskset = None
+        self._async_ret = None
 
     def enqueue(self, plain_task_cls, *args, **kwargs):
         plain_task = plain_task_cls(*args, **kwargs)
-        task = CeleryTask(plain_task)
-        self.taskset.tasks.add(task)
+        self._tasks.append(plain_task)
+
+    def _create_taskset(self):
+        tasks = [celery_task.subtask((t,)) for t in self._tasks]
+        self._taskset = TaskSet(tasks)
 
     def apply_async(self):
-        self.taskset.apply_async()
+        self._create_taskset()
+        self._async_ret = self._taskset.apply_async()
 
     def wait_for_results(self):
-        self.taskset.join()
+        return self._async_ret.join()
+
+    def run_locally(self):
+        self._create_taskset()
+        return self._taskset.apply()

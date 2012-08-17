@@ -24,33 +24,33 @@ class PostProcessor(object):
     """Calculate post-processing per-site aggregate results: mean and
     quantile curves.
 
-    :attribute job
-      The job object associated with the post process
+    :attribute _job
+      The _job object associated with the post process
 
-    :attribute hazard_calculation
+    :attribute _calculation
       The hazard calculation object with the configuration of the calculation
 
-    :attribute curve_finder
+    :attribute _curve_finder
       An object used to query for individual hazard curves
 
-    :attribute curve_writer
+    :attribute _curve_writer
       An object used to save aggregate hazard curves
 
-    :attribute task_handler
+    :attribute _task_handler
       An object used to distribute the post process in subtasks
     """
 
     # Number of locations processed by each task in the post process phase
     CURVE_BLOCK_SIZE = 100
 
-    def __init__(self, job, calculation,
+    def __init__(self, job, hc,
                  curve_finder=None, curve_writer=None, task_handler=None):
-        self.job = job
-        self.hazard_calculation = calculation,
-        self.curve_finder = curve_finder
-        self.task_handler = task_handler
-        self.curve_writer = curve_writer
-        self.curves_per_location = calculation.individual_curves_per_location()
+        self._job = job
+        self._calculation = hc,
+        self._curve_finder = curve_finder
+        self._curve_writer = curve_writer
+        self._task_handler = task_handler
+        self._curves_per_location = hc.individual_curves_per_location()
 
     def initialize(self):
         """
@@ -64,56 +64,56 @@ class PostProcessor(object):
         curves_per_task = self.curves_per_task()
 
         for imt in self.imts:
-            chunks_of_curves = self.curve_finder.individual_curves_chunks(
-                self.job, imt, curves_per_task)
+            chunks_of_curves = self._curve_finder.individual_curves_chunks(
+                self._job, imt, curves_per_task)
 
             if self.should_compute_mean_curves():
                 for chunk_of_curves in chunks_of_curves:
-                    self.task_handler.enqueue(
+                    self._task_handler.enqueue(
                         MeanCurveCalculator,
-                        curves_per_location=self.curves_per_location,
+                        curves_per_location=self._curves_per_location,
                         chunk_of_curves=chunk_of_curves,
-                        curve_writer=self.curve_writer)
+                        curve_writer=self._curve_writer)
 
             if self.should_compute_quantile_functions():
                 for chunk_of_curves in chunks_of_curves:
-                    self.task_handler.enqueue(
+                    self._task_handler.enqueue(
                         QuantileCurveCalculator,
-                        curves_per_location=self.curves_per_location,
+                        curves_per_location=self._curves_per_location,
                         chunk_of_curves=chunk_of_curves)
 
     def execute(self):
         if self.is_too_big():
-            self.task_handler.apply_async()
-            self.task_handler.wait_for_results()
+            self._task_handler.apply_async()
+            self._task_handler.wait_for_results()
         else:
-            self.task_handler.run_locally()
+            self._task_handler.run_locally()
 
     def should_compute_mean_curves(self):
-        return self.hazard_calculation.mean_hazard_curves
+        return self._calculation.mean_hazard_curves
 
     def should_compute_quantiles(self):
-        return self.hazard_calculation.quantile_hazard_curves
+        return self._calculation.quantile_hazard_curves
 
     def is_too_big(self):
         return False
 
     def curves_per_task(self):
         block_size = self.__class__.CURVE_BLOCK_SIZE
-        chunk_size = self.curves_per_location
+        chunk_size = self._curves_per_location
         return block_size * chunk_size
 
     def intensity_measure_types(self):
         return (
-            self.hazard_calculation.intensity_measure_types_and_levels.keys())
+            self._calculation.intensity_measure_types_and_levels.keys())
 
 
 class MeanCurveCalculator(object):
     def __init__(self, curves_per_location, chunk_of_curves,
                  curve_writer):
-        self.chunk_of_curves = chunk_of_curves
-        self.curves_per_location = curves_per_location
-        self.curve_writer = curve_writer
+        self._chunk_of_curves = chunk_of_curves
+        self._curves_per_location = curves_per_location
+        self._curve_writer = curve_writer
 
     def execute(self):
         poe_matrix = self.fetch_curves()
@@ -121,15 +121,15 @@ class MeanCurveCalculator(object):
         mean_curves = numpy.mean(poe_matrix, 2).transpose()
 
         locations = self.locations()
-        _, job, imt, _, _ = self.chunk_of_curves
+        _, job, imt, _, _ = self._chunk_of_curves
 
         for mean_curve in mean_curves:
             location = locations.next()
-            self.curve_writer.add_mean_curve(job, imt, location, mean_curve)
-        self.curve_writer.flush()
+            self._curve_writer.add_mean_curve(job, imt, location, mean_curve)
+        self._curve_writer.flush()
 
     def locations(self):
-        curve_finder, job, imt, offset, size = self.chunk_of_curves
+        curve_finder, job, imt, offset, size = self._chunk_of_curves
         locations = curve_finder.individual_curves_for_job_ordered(
             job, imt).values_list('location', flat=True).distinct()
         locations = locations[offset: size + offset]
@@ -141,16 +141,14 @@ class MeanCurveCalculator(object):
         Returns a 3d matrix with shape given by
         (curves_per_location x number of locations x levels))
         """
-        curve_finder, job, imt, offset, size = self.chunk_of_curves
+        curve_finder, job, imt, offset, size = self._chunk_of_curves
         curves = curve_finder.individual_curves_for_job_ordered(
             job, imt).values_list('poes', flat=True)[offset: size + offset]
 
         level_nr = len(curves[0])
-        # concatenate all the poes
-        poes = sum(curves)
-        loc_nr = len(curves) / self.curves_per_location
-        return numpy.reshape(poes,
-                             (self.curves_per_location, loc_nr, level_nr),
+        loc_nr = len(curves) / self._curves_per_location
+        return numpy.reshape(curves,
+                             (self._curves_per_location, loc_nr, level_nr),
                              'F')
 
 

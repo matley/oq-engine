@@ -1073,6 +1073,8 @@ def parse_imt(imt):
     Given an intensity measure type in long form (with attributes),
     return the intensity measure type, the sa_period and sa_damping
     """
+    sa_period = None
+    sa_damping = None
     if 'SA' in imt:
         match = re.match(r'^SA\(([^)]+?)\)$', imt)
         sa_period = float(match.group(1))
@@ -1143,7 +1145,7 @@ class HazardCurveDataManager(djm.Manager):
     def individual_curves_for_job_nr(self, job, imt):
         return self.individual_curves_for_job(job, imt).count()
 
-    def individual_curves_in_chunks(self, job, imt, block_size):
+    def individual_curves_chunks(self, job, imt, block_size):
         curve_nr = self.individual_curves_for_job_nr(job, imt)
         ranges = xrange(0, curve_nr, block_size)
 
