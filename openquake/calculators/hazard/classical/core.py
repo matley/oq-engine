@@ -47,6 +47,7 @@ from openquake.job.validation import MIN_SINT_32
 from openquake.utils import config
 from openquake.utils import stats
 from openquake.utils import tasks as utils_tasks
+from openquake.calculators.task_handlers import CeleryTaskHandler
 from .post_processing import PostProcessor
 
 # Routing key format string for communication between tasks and the control
@@ -526,7 +527,12 @@ class ClassicalHazardCalculator(base.CalculatorNext):
         models.SiteData.objects.filter(hazard_calculation=hc.id).delete()
 
     def post_process(self):
-        post_processor = PostProcessor(self.job)
+        post_processor = PostProcessor(
+            self.job,
+            self.job.hazard_calculation,
+            curve_finder=models.HazardCurveData.objects,
+            curve_writer=models.AggregateCurveManager,
+            task_handler=CeleryTaskHandler())
         post_processor.initialize()
         post_processor.execute()
 

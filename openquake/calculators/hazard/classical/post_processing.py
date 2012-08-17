@@ -19,9 +19,6 @@ Post processing functionality for the classical PSHA hazard calculator.
 
 import numpy
 
-from openquake.db import models
-from openquake.calculators.task_handlers import CeleryTaskHandler
-
 
 class PostProcessor(object):
     """Calculate post-processing per-site aggregate results: mean and
@@ -36,6 +33,9 @@ class PostProcessor(object):
     :attribute curve_finder
       An object used to query for individual hazard curves
 
+    :attribute curve_writer
+      An object used to save aggregate hazard curves
+
     :attribute task_handler
       An object used to distribute the post process in subtasks
     """
@@ -43,13 +43,14 @@ class PostProcessor(object):
     # Number of locations processed by each task in the post process phase
     CURVE_BLOCK_SIZE = 100
 
-    def __init__(self, job, hazard_calculation,
-                 curve_finder=None, task_handler=None):
+    def __init__(self, job, calculation,
+                 curve_finder=None, curve_writer=None, task_handler=None):
         self.job = job
-        self.hazard_calculation = hazard_calculation
-        self.curve_finder = curve_finder or models.HazardCurveData.objects
-        self.task_handler = task_handler or CeleryTaskHandler()
-        self.curves_per_location = hazard_calculation.individual_curves_per_location()
+        self.hazard_calculation = calculation,
+        self.curve_finder = curve_finder
+        self.task_handler = task_handler
+        self.curve_writer = curve_writer
+        self.curves_per_location = calculation.individual_curves_per_location()
 
     def initialize(self):
         """
@@ -72,7 +73,7 @@ class PostProcessor(object):
                         MeanCurveCalculator,
                         curves_per_location=self.curves_per_location,
                         chunk_of_curves=chunk_of_curves,
-                        curve_writer=models.AggregateCurveManager)
+                        curve_writer=self.curve_writer)
 
             if self.should_compute_quantile_functions():
                 for chunk_of_curves in chunks_of_curves:
