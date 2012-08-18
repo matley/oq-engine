@@ -14,42 +14,82 @@
 # along with OpenQuake.  If not, see <http://www.gnu.org/licenses/>.
 
 """
-Concrete classes to manage task queueing.
+OO Interface to manage task queueing.
 """
 
 from celery import registry
 from celery.task import task, Task
 from celery.task.sets import TaskSet
 
+# pylint: enable=W0511,W0142,I0011,E1101,E0611,F0401,E1103,R0801,W0232
+
 
 @task
 class CeleryTask(Task):
-    def run(self, task_cls):
-        return task_cls.run()
-celery_task = registry.tasks[CeleryTask.name]
+    """
+    Implements the delegation pattern to separate the concern of
+    concrete task from celery task
+    """
+
+    def __init__(self):
+        # Do not do anything to honour the celery metaclass magic
+        pass
+
+    @classmethod
+    def run_task(cls, a_task, *args, **kwargs):
+        """
+        Call #run method of a_task passing in *args and **kwargs
+        """
+        return a_task.run(*args, **kwargs)
+
+    def run(self, a_task):
+        """
+        Call #run method of a_task passing in *args and **kwargs
+        """
+        return self.__class__.run_task(a_task)
+CELERY_TASK = registry.tasks[CeleryTask.name]
 
 
 class CeleryTaskHandler(object):
+    """
+    A task handler for celery task queueing
+    """
     def __init__(self):
         self._tasks = []
         self._taskset = None
         self._async_ret = None
 
     def enqueue(self, plain_task_cls, *args, **kwargs):
+        """
+        Build a task from a plain task callable with *args and **kwargs
+        then append the built task to the queue
+        """
         plain_task = plain_task_cls(*args, **kwargs)
         self._tasks.append(plain_task)
 
     def _create_taskset(self):
-        tasks = [celery_task.subtask((t,)) for t in self._tasks]
+        """
+        Create a celery TaskSet suitable for apply_* function
+        """
+        tasks = [CELERY_TASK.subtask((t,)) for t in self._tasks]
         self._taskset = TaskSet(tasks)
 
     def apply_async(self):
+        """
+        Consume the whole queue executing the task asynchronously
+        """
         self._create_taskset()
         self._async_ret = self._taskset.apply_async()
 
     def wait_for_results(self):
+        """
+        Wait the results, if an async execution has been requested
+        """
         return self._async_ret.join()
 
-    def run_locally(self):
+    def apply(self):
+        """
+        Consume the whole queue executing the task synchronously
+        """
         self._create_taskset()
         return self._taskset.apply()

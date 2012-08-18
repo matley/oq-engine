@@ -13,6 +13,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with OpenQuake.  If not, see <http://www.gnu.org/licenses/>.
 
+"""
+Test task queue handling.
+Requires a celery server up and running
+"""
 
 import unittest
 import random
@@ -20,14 +24,28 @@ from openquake.calculators import task_handlers
 
 
 class DummyTask():
+    """
+    Just a dummy task that stores a field and returns it
+    """
     def __init__(self, arg):
         self.arg = arg
 
     def run(self):
+        """
+        Just return a field
+        """
         return self.arg
 
 
+# unittest.TestCase base class does not honor the following coding
+# convention
+# pylint: disable=C0103,R0904
+
+
 class CeleryTaskHandlerTestCase(unittest.TestCase):
+    """
+    Test celery task queue OO interface
+    """
     def setUp(self):
         self.task_cls = DummyTask
         self.task_handler = task_handlers.CeleryTaskHandler()
@@ -39,8 +57,17 @@ class CeleryTaskHandlerTestCase(unittest.TestCase):
         ret = self.task_handler.wait_for_results()
         self.assertEqual([a_number], list(ret))
 
-    def test_run_locally(self):
+    def test_sequential_enqueue(self):
+        a_number = random.random()
+        another_number = random.random()
+        self.task_handler.enqueue(self.task_cls, a_number)
+        self.task_handler.enqueue(self.task_cls, another_number)
+        self.task_handler.apply_async()
+        ret = self.task_handler.wait_for_results()
+        self.assertEqual([a_number, another_number], list(ret))
+
+    def test_apply(self):
         a_number = random.random()
         self.task_handler.enqueue(self.task_cls, a_number)
-        ret = self.task_handler.run_locally()
+        ret = self.task_handler.apply()
         self.assertEqual([a_number], list(ret))
