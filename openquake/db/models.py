@@ -1131,11 +1131,12 @@ class HazardCurve(djm.Model):
 
 
 class HazardCurveDataManager(djm.Manager):
-    def individual_curves_for_job(self, job, imt):
+    def individual_curves_for_job(self, job, imt=None):
         query_args = {'hazard_curve__statistics__isnull': True,
                       'hazard_curve__output__oq_job': job,
-                      'hazard_curve__imt': imt,
                       'hazard_curve__output__output_type': "hazard_curve"}
+        if imt:
+            query_args['hazard_curve__imt'] = imt
         queryset = self.filter(**query_args)
         return queryset
 

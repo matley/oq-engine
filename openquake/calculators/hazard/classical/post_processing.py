@@ -1,3 +1,6 @@
+# -*- coding: utf-8 -*-
+# pylint: enable=W0511,W0142,I0011,E1101,E0611,F0401,E1103,R0801,W0232
+
 # Copyright (c) 2010-2012, GEM Foundation.
 #
 # OpenQuake is free software: you can redistribute it and/or modify it
@@ -21,8 +24,16 @@ import numpy
 
 
 class PostProcessor(object):
-    """Calculate post-processing per-site aggregate results: mean and
-    quantile curves.
+    """Calculate post-processing per-site aggregate results. E.g. mean
+    and quantile curves.
+
+    Implements the Command pattern where the commands are instances
+    for computing the post-processing output
+
+    The instances of this class should used with the following protocol:
+    a_post_processor = PostProcessor(...)
+    a_post_processor.initialize() # divide the calculation in subtasks
+    a_post_processor.execute() # execute subtasks
 
     :attribute _job
       The _job object associated with the post process
@@ -42,6 +53,9 @@ class PostProcessor(object):
 
     # Number of locations processed by each task in the post process phase
     CURVE_BLOCK_SIZE = 100
+
+    # minimum number of curves to be processed with a distributed queue
+    DISTRIBUTED_THRESOLD = 1000
 
     def __init__(self, job, hc,
                  curve_finder=None, curve_writer=None, task_handler=None):
@@ -83,32 +97,65 @@ class PostProcessor(object):
                         chunk_of_curves=chunk_of_curves)
 
     def execute(self):
-        if self.is_too_big():
+        """
+        Execute the calculation using the task handler
+        """
+        if self.should_be_distributed():
             self._task_handler.apply_async()
             self._task_handler.wait_for_results()
         else:
             self._task_handler.run_locally()
 
     def should_compute_mean_curves(self):
+        """
+        Returns None if no mean curve calculation has been requested
+        """
         return self._calculation.mean_hazard_curves
 
     def should_compute_quantiles(self):
+        """
+        Returns None if no quantile curve calculation has been requested
+        """
         return self._calculation.quantile_hazard_curves
 
-    def is_too_big(self):
-        return False
+    def should_be_distributed(self):
+        """
+        Returns True if the calculation should be distributed
+        """
+        curve_nr = self._curve_finder.individual_curves_for_job_nr(self._job)
+        return curve_nr > self.__class__.DISTRIBUTION_THRESHOLD
 
     def curves_per_task(self):
+        """
+        Returns the number of curves calculated by each task
+        """
         block_size = self.__class__.CURVE_BLOCK_SIZE
         chunk_size = self._curves_per_location
         return block_size * chunk_size
 
     def intensity_measure_types(self):
+        """
+        Returns the intensity measure types considered (in long form,
+        e.g. SA(10))
+        """
         return (
             self._calculation.intensity_measure_types_and_levels.keys())
 
 
 class MeanCurveCalculator(object):
+    """
+    Calculate mean curves.
+
+    :attribute _curves_per_location
+      the number of curves for each location considered for mean
+      calculation
+
+    :attribute _chunk_of_curves
+      a pointer to set of curves (usually spanning more locations)
+
+    :attribute _curve_writer
+      an object that can save the result
+    """
     def __init__(self, curves_per_location, chunk_of_curves,
                  curve_writer):
         self._chunk_of_curves = chunk_of_curves
@@ -116,6 +163,9 @@ class MeanCurveCalculator(object):
         self._curve_writer = curve_writer
 
     def execute(self):
+        """
+        Fetch the curves, calculate the mean curves and saves them
+        """
         poe_matrix = self.fetch_curves()
 
         mean_curves = numpy.mean(poe_matrix, 2).transpose()
@@ -129,6 +179,9 @@ class MeanCurveCalculator(object):
         self._curve_writer.flush()
 
     def locations(self):
+        """
+        A generator of locations considered
+        """
         curve_finder, job, imt, offset, size = self._chunk_of_curves
         locations = curve_finder.individual_curves_for_job_ordered(
             job, imt).values_list('location', flat=True).distinct()
@@ -153,8 +206,14 @@ class MeanCurveCalculator(object):
 
 
 class QuantileCurveCalculator(object):
+    """
+    TBI
+    """
     def __init__(self, *args):
         raise NotImplementedError
 
     def execute(self):
+        """
+        tbi
+        """
         raise NotImplementedError

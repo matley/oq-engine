@@ -1,3 +1,7 @@
+# -*- coding: utf-8 -*-
+# pylint: enable=W0511,W0142,I0011,E1101,E0611,F0401,E1103,R0801,W0232
+
+
 # Copyright (c) 2010-2012, GEM Foundation.
 #
 # OpenQuake is free software: you can redistribute it and/or modify it
@@ -20,8 +24,6 @@ OO Interface to manage task queueing.
 from celery import registry
 from celery.task import task, Task
 from celery.task.sets import TaskSet
-
-# pylint: enable=W0511,W0142,I0011,E1101,E0611,F0401,E1103,R0801,W0232
 
 
 @task
