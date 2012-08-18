@@ -28,3 +28,4 @@ coverage.ec
 TAGS
 dbinary.xml
 .ropeproject
+*_flymake.py
