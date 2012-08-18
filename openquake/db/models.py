@@ -28,6 +28,7 @@ Model representations of the OpenQuake DB tables.
 
 import os
 import re
+import functools
 
 from collections import namedtuple
 from datetime import datetime
@@ -1131,27 +1132,35 @@ class HazardCurve(djm.Model):
 
 
 class HazardCurveDataManager(djm.Manager):
-    def individual_curves_for_job(self, job, imt=None):
+    def __init__(self):
+        super(HazardCurveDataManager, self).__init__(self)
+        self.current_job = None
+
+    def individual_curves(self, job=None, imt=None):
         query_args = {'hazard_curve__statistics__isnull': True,
-                      'hazard_curve__output__oq_job': job,
+                      'hazard_curve__output__oq_job': job or self.current_job,
                       'hazard_curve__output__output_type': "hazard_curve"}
         if imt:
             query_args['hazard_curve__imt'] = imt
         queryset = self.filter(**query_args)
         return queryset
 
-    def individual_curves_for_job_ordered(self, job, imt):
-        return self.individual_curves_for_job(job, imt).order_by('location')
+    def individual_curves_ordered(self, job=None, imt=None):
+        return self.individual_curves(job, imt).order_by('location')
 
-    def individual_curves_for_job_nr(self, job, imt):
-        return self.individual_curves_for_job(job, imt).count()
+    def individual_curves_nr(self, job=None, imt=None):
+        return self.individual_curves(job, imt).count()
 
-    def individual_curves_chunks(self, job, imt, block_size):
-        curve_nr = self.individual_curves_for_job_nr(job, imt)
+    def individual_curves_chunks(self, job=None, imt=None, block_size=1):
+        curve_nr = self.individual_curves_nr(job, imt)
         ranges = xrange(0, curve_nr, block_size)
 
+        chunk_getter = (lambda offset, field: self.individual_curves(
+            job,
+            imt).values_list(field, flat=True)[offset: block_size + offset])
+
         for offset in ranges:
-            yield (self, job, imt, offset, block_size)
+            yield (lambda field: chunk_getter(offset, field))
 
 
 class HazardCurveData(djm.Model):
@@ -1172,9 +1181,12 @@ class HazardCurveData(djm.Model):
 
 
 class AggregateCurveManager(object):
-    def create_mean_curve(self, job, imt, location, poes):
+    def __init__(self, job):
+        self.current_job = job
+
+    def create_mean_curve(self, imt, location, poes):
         output = Output.objects.create_output(
-            job=job,
+            job=self.current_job,
             display_name="mean curve at %s" % location.wkt)
         curve = HazardCurve.objects.create_aggregate_curve(
             imt=imt,

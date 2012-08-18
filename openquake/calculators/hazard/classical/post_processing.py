@@ -35,20 +35,22 @@ class PostProcessor(object):
     a_post_processor.initialize() # divide the calculation in subtasks
     a_post_processor.execute() # execute subtasks
 
-    :attribute _job
-      The _job object associated with the post process
-
     :attribute _calculation
       The hazard calculation object with the configuration of the calculation
 
     :attribute _curve_finder
-      An object used to query for individual hazard curves
+      An object used to query for individual hazard curves.
+      It should implement the methods #individual_curve_nr and
+      #individual_curve_chunks
 
     :attribute _curve_writer
-      An object used to save aggregate hazard curves
+      An object used to save aggregate hazard curves.
+      It should implement the methods #add_mean_curve and #add_quantile_curves
 
     :attribute _task_handler
-      An object used to distribute the post process in subtasks
+      An object used to distribute the post process in subtasks.
+      It should implement the method #enqueue, #apply_async, #wait_for_results
+      and #apply
     """
 
     # Number of locations processed by each task in the post process phase
@@ -57,9 +59,8 @@ class PostProcessor(object):
     # minimum number of curves to be processed with a distributed queue
     DISTRIBUTED_THRESOLD = 1000
 
-    def __init__(self, job, hc,
+    def __init__(self, hc,
                  curve_finder=None, curve_writer=None, task_handler=None):
-        self._job = job
         self._calculation = hc,
         self._curve_finder = curve_finder
         self._curve_writer = curve_writer
@@ -77,9 +78,9 @@ class PostProcessor(object):
 
         curves_per_task = self.curves_per_task()
 
-        for imt in self.imts:
+        for imt in self._calculation.intensity_measure_types_and_levels:
             chunks_of_curves = self._curve_finder.individual_curves_chunks(
-                self._job, imt, curves_per_task)
+                imt, curves_per_task)
 
             if self.should_compute_mean_curves():
                 for chunk_of_curves in chunks_of_curves:
@@ -122,7 +123,7 @@ class PostProcessor(object):
         """
         Returns True if the calculation should be distributed
         """
-        curve_nr = self._curve_finder.individual_curves_for_job_nr(self._job)
+        curve_nr = self._curve_finder.individual_curves_nr()
         return curve_nr > self.__class__.DISTRIBUTION_THRESHOLD
 
     def curves_per_task(self):
@@ -132,14 +133,6 @@ class PostProcessor(object):
         block_size = self.__class__.CURVE_BLOCK_SIZE
         chunk_size = self._curves_per_location
         return block_size * chunk_size
-
-    def intensity_measure_types(self):
-        """
-        Returns the intensity measure types considered (in long form,
-        e.g. SA(10))
-        """
-        return (
-            self._calculation.intensity_measure_types_and_levels.keys())
 
 
 class MeanCurveCalculator(object):
@@ -151,10 +144,12 @@ class MeanCurveCalculator(object):
       calculation
 
     :attribute _chunk_of_curves
-      a pointer to set of curves (usually spanning more locations)
+      a set of individual curves (usually spanning more locations)
+      grouped in chunks. Each chunk is a function that actually
+      fetches the curves when it is invoked.
 
     :attribute _curve_writer
-      an object that can save the result
+      an object that can save the result by calling #add_mean_curve
     """
     def __init__(self, curves_per_location, chunk_of_curves,
                  curve_writer):
@@ -171,21 +166,16 @@ class MeanCurveCalculator(object):
         mean_curves = numpy.mean(poe_matrix, 2).transpose()
 
         locations = self.locations()
-        _, job, imt, _, _ = self._chunk_of_curves
 
         for mean_curve in mean_curves:
             location = locations.next()
-            self._curve_writer.add_mean_curve(job, imt, location, mean_curve)
-        self._curve_writer.flush()
+            self._curve_writer.add_mean_curve(location, mean_curve)
 
     def locations(self):
         """
-        A generator of locations considered
+        A generator of locations considered by the computation
         """
-        curve_finder, job, imt, offset, size = self._chunk_of_curves
-        locations = curve_finder.individual_curves_for_job_ordered(
-            job, imt).values_list('location', flat=True).distinct()
-        locations = locations[offset: size + offset]
+        locations = self._chunk_of_curves('location')
         for location in locations:
             yield location
 
@@ -194,10 +184,7 @@ class MeanCurveCalculator(object):
         Returns a 3d matrix with shape given by
         (curves_per_location x number of locations x levels))
         """
-        curve_finder, job, imt, offset, size = self._chunk_of_curves
-        curves = curve_finder.individual_curves_for_job_ordered(
-            job, imt).values_list('poes', flat=True)[offset: size + offset]
-
+        curves = self._chunk_of_curves('poes')
         level_nr = len(curves[0])
         loc_nr = len(curves) / self._curves_per_location
         return numpy.reshape(curves,

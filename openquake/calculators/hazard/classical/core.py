@@ -527,11 +527,13 @@ class ClassicalHazardCalculator(base.CalculatorNext):
         models.SiteData.objects.filter(hazard_calculation=hc.id).delete()
 
     def post_process(self):
+        curve_finder = models.HazardCurveData.objects
+        curve_finder.current_job = self.job
+
         post_processor = PostProcessor(
-            self.job,
             self.job.hazard_calculation,
-            curve_finder=models.HazardCurveData.objects,
-            curve_writer=models.AggregateCurveManager,
+            curve_finder=curve_finder,
+            curve_writer=models.AggregateCurveManager(self.job),
             task_handler=CeleryTaskHandler())
         post_processor.initialize()
         post_processor.execute()
