@@ -231,6 +231,30 @@ class PostProcessorTestCase(unittest.TestCase):
         self.assertEqual(self.task_handler.wait_for_results.call_count, 1)
         self.assertEqual(self.task_handler.apply.call_count, 1)
 
+    def test_should_be_distributed(self):
+        calculation = mock.Mock()
+        self.curve_finder.individual_curves_nr = mock.Mock(
+            return_value=1)
+
+        a_post_processor = PostProcessor(calculation,
+                                         self.curve_finder,
+                                         self.curve_writer,
+                                         self.task_handler)
+
+        # with a very small number of curves we expect False
+        self.assertFalse(a_post_processor.should_be_distributed())
+
+        self.curve_finder.individual_curves_nr = mock.Mock(
+            return_value=10 ** 10)
+
+        a_post_processor = PostProcessor(calculation,
+                                         self.curve_finder,
+                                         self.curve_writer,
+                                         self.task_handler)
+
+        # with a very big number of curves we expect True
+        self.assertTrue(a_post_processor.should_be_distributed())
+
 
 def curve_chunks_getter(db):
     """
