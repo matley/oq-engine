@@ -41,6 +41,14 @@ class DummyTask():
         return self.arg
 
 
+class DummyTaskThatFail():
+    def run(self):
+        """
+        It will fail
+        """
+        raise RuntimeError("Expected fail")
+
+
 class SimpleTaskHandlerTestCase(unittest.TestCase):
     """
     Test simple task queue OO interface
@@ -64,6 +72,14 @@ class SimpleTaskHandlerTestCase(unittest.TestCase):
         self.task_handler.apply_async()
         ret = self.task_handler.wait_for_results()
         self.assertEqual([a_number, another_number], list(ret))
+
+    def test_fail_sync(self):
+        self.task_handler.enqueue(DummyTaskThatFail)
+        try:
+            ret = self.task_handler.apply()
+            self.assertEqual(ret.successful(), False)
+        except RuntimeError:
+            self.assertTrue(True)
 
     def test_apply(self):
         a_number = random.random()

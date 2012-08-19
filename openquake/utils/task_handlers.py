@@ -108,7 +108,8 @@ def celery_task(a_task):
     try:
         return a_task.run()
     except Exception, err:
-        logs.LOG.critical('Error occurred in task: %s' % str(err))
+        logs.LOG.critical('Error occurred in task %s: %s' % (
+            a_task, str(err)))
         logs.LOG.exception(err)
         raise err
 CELERY_TASK = celery_task
