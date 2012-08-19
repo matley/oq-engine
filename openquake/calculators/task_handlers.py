@@ -26,40 +26,13 @@ from celery.task import task, Task
 from celery.task.sets import TaskSet
 
 
-@task
-class CeleryTask(Task):
+class SimpleTaskHandler(object):
     """
-    Implements the delegation pattern to separate the concern of
-    concrete task from celery task
-    """
-
-    def __init__(self):
-        # Do not do anything to honour the celery metaclass magic
-        pass
-
-    @classmethod
-    def run_task(cls, a_task, *args, **kwargs):
-        """
-        Call #run method of a_task passing in *args and **kwargs
-        """
-        return a_task.run(*args, **kwargs)
-
-    def run(self, a_task):
-        """
-        Call #run method of a_task passing in *args and **kwargs
-        """
-        return self.__class__.run_task(a_task)
-CELERY_TASK = registry.tasks[CeleryTask.name]
-
-
-class CeleryTaskHandler(object):
-    """
-    A task handler for celery task queueing
+    A task queue handler that never consumes its tasks asynchronously
     """
     def __init__(self):
+        self._ret = None
         self._tasks = []
-        self._taskset = None
-        self._async_ret = None
 
     def enqueue(self, plain_task_cls, *args, **kwargs):
         """
@@ -68,6 +41,34 @@ class CeleryTaskHandler(object):
         """
         plain_task = plain_task_cls(*args, **kwargs)
         self._tasks.append(plain_task)
+
+    def apply(self):
+        """
+        Execute all tasks and returns a list of results
+        """
+        return [t.run() for t in self._tasks]
+
+    def apply_async(self):
+        """
+        Execute each tasks and save their value
+        """
+        self._ret = self.apply()
+
+    def wait_for_results(self):
+        """
+        Returns values got by apply_async
+        """
+        return self._ret
+
+
+class CeleryTaskHandler(SimpleTaskHandler):
+    """
+    A task queue handler for celery task queueing
+    """
+    def __init__(self):
+        super(CeleryTaskHandler, self).__init__()
+        self._taskset = None
+        self._async_ret = None
 
     def _create_taskset(self):
         """
@@ -95,3 +96,29 @@ class CeleryTaskHandler(object):
         """
         self._create_taskset()
         return self._taskset.apply()
+
+
+@task
+class CeleryTask(Task):
+    """
+    Implements the delegation pattern to separate the concern of
+    concrete task from celery task
+    """
+
+    def __init__(self):
+        # Do not do anything to honour the celery metaclass magic
+        pass
+
+    @classmethod
+    def run_task(cls, a_task, *args, **kwargs):
+        """
+        Call #run method of a_task passing in *args and **kwargs
+        """
+        return a_task.run(*args, **kwargs)
+
+    def run(self, a_task):
+        """
+        Call #run method of a_task passing in *args and **kwargs
+        """
+        return self.__class__.run_task(a_task)
+CELERY_TASK = registry.tasks[CeleryTask.name]

@@ -1133,7 +1133,7 @@ class HazardCurve(djm.Model):
 
 class HazardCurveDataManager(djm.Manager):
     def __init__(self):
-        super(HazardCurveDataManager, self).__init__(self)
+        super(HazardCurveDataManager, self).__init__()
         self.current_job = None
 
     def individual_curves(self, job=None, imt=None):

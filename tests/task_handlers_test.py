@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# unittest.TestCase base class does not honor the following coding
+# convention
+# pylint: disable=C0103,R0904
 
 # Copyright (c) 2010-2012, GEM Foundation.
 #
@@ -16,8 +19,7 @@
 # along with OpenQuake.  If not, see <http://www.gnu.org/licenses/>.
 
 """
-Test task queue handling.
-Requires a celery server up and running
+Test task queue handling with OO interface.
 """
 
 import unittest
@@ -39,18 +41,13 @@ class DummyTask():
         return self.arg
 
 
-# unittest.TestCase base class does not honor the following coding
-# convention
-# pylint: disable=C0103,R0904
-
-
-class CeleryTaskHandlerTestCase(unittest.TestCase):
+class SimpleTaskHandlerTestCase(unittest.TestCase):
     """
-    Test celery task queue OO interface
+    Test simple task queue OO interface
     """
     def setUp(self):
         self.task_cls = DummyTask
-        self.task_handler = task_handlers.CeleryTaskHandler()
+        self.task_handler = task_handlers.SimpleTaskHandler()
 
     def test_apply_async(self):
         a_number = random.random()
@@ -73,3 +70,13 @@ class CeleryTaskHandlerTestCase(unittest.TestCase):
         self.task_handler.enqueue(self.task_cls, a_number)
         ret = self.task_handler.apply()
         self.assertEqual([a_number], list(ret))
+
+
+class CeleryTaskHandlerTestCase(SimpleTaskHandlerTestCase):
+    """
+    Inherit tests from simple task handler but use celery.
+    Requires a celery server up and running
+    """
+    def setUp(self):
+        self.task_cls = DummyTask
+        self.task_handler = task_handlers.CeleryTaskHandler()

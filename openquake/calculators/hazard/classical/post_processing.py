@@ -45,7 +45,8 @@ class PostProcessor(object):
 
     :attribute _curve_writer
       An object used to save aggregate hazard curves.
-      It should implement the methods #add_mean_curve and #add_quantile_curves
+      It should implement the methods #create_mean_curve and
+      #create_quantile_curves
 
     :attribute _task_handler
       An object used to distribute the post process in subtasks.
@@ -57,11 +58,11 @@ class PostProcessor(object):
     CURVE_BLOCK_SIZE = 100
 
     # minimum number of curves to be processed with a distributed queue
-    DISTRIBUTED_THRESOLD = 1000
+    DISTRIBUTION_THRESHOLD = 1000
 
     def __init__(self, hc,
                  curve_finder=None, curve_writer=None, task_handler=None):
-        self._calculation = hc,
+        self._calculation = hc
         self._curve_finder = curve_finder
         self._curve_writer = curve_writer
         self._task_handler = task_handler
@@ -95,17 +96,18 @@ class PostProcessor(object):
                     self._task_handler.enqueue(
                         QuantileCurveCalculator,
                         curves_per_location=self._curves_per_location,
-                        chunk_of_curves=chunk_of_curves)
+                        chunk_of_curves=chunk_of_curves,
+                        curve_writer=self._curve_writer)
 
     def execute(self):
         """
-        Execute the calculation using the task handler
+        Execute the calculation using the task queue handler
         """
         if self.should_be_distributed():
             self._task_handler.apply_async()
             self._task_handler.wait_for_results()
         else:
-            self._task_handler.run_locally()
+            self._task_handler.apply()
 
     def should_compute_mean_curves(self):
         """
@@ -113,7 +115,7 @@ class PostProcessor(object):
         """
         return self._calculation.mean_hazard_curves
 
-    def should_compute_quantiles(self):
+    def should_compute_quantile_functions(self):
         """
         Returns None if no quantile curve calculation has been requested
         """
@@ -144,12 +146,12 @@ class MeanCurveCalculator(object):
       calculation
 
     :attribute _chunk_of_curves
-      a set of individual curves (usually spanning more locations)
-      grouped in chunks. Each chunk is a function that actually
-      fetches the curves when it is invoked.
+      a list of individual curve chunks (usually spanning more
+      locations). Each chunk is a function that actually fetches the
+      curves when it is invoked.
 
     :attribute _curve_writer
-      an object that can save the result by calling #add_mean_curve
+      an object that can save the result by calling #create_mean_curve
     """
     def __init__(self, curves_per_location, chunk_of_curves,
                  curve_writer):
@@ -163,13 +165,11 @@ class MeanCurveCalculator(object):
         """
         poe_matrix = self.fetch_curves()
 
-        mean_curves = numpy.mean(poe_matrix, 2).transpose()
-
-        locations = self.locations()
+        mean_curves = numpy.mean(poe_matrix, 0)
 
         for mean_curve in mean_curves:
-            location = locations.next()
-            self._curve_writer.add_mean_curve(location, mean_curve)
+            location = self.locations().next()
+            self._curve_writer.create_mean_curve(location, mean_curve)
 
     def locations(self):
         """
