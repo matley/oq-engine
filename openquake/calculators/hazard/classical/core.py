@@ -47,7 +47,7 @@ from openquake.job.validation import MIN_SINT_32
 from openquake.utils import config
 from openquake.utils import stats
 from openquake.utils import tasks as utils_tasks
-from openquake.calculators.task_handlers import CeleryTaskHandler
+from openquake.utils.task_handlers import CeleryTaskHandler
 from .post_processing import PostProcessor
 
 # Routing key format string for communication between tasks and the control
@@ -266,7 +266,8 @@ class ClassicalHazardCalculator(base.CalculatorNext):
             seed = rnd.randint(MIN_SINT_32, MAX_SINT_32)
             rnd.seed(seed)
 
-    def initialize_source_progress(self, lt_rlz, hzrd_src):
+    @staticmethod
+    def initialize_source_progress(lt_rlz, hzrd_src):
         """
         Create ``source_progress`` models for given logic tree realization
         and set total sources of realization.

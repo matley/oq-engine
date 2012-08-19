@@ -130,6 +130,9 @@ class AggregateCurveManager(TestCaseWithAJob):
 
 
 class HazardCurveDataManagerTestCase(TestCaseWithAJob):
+    """
+    Test the manager of HazardCurveData objects
+    """
     def setUp(self):
         super(HazardCurveDataManagerTestCase, self).setUp()
         self.manager = openquake.HazardCurveData.objects

@@ -24,7 +24,7 @@ Test task queue handling with OO interface.
 
 import unittest
 import random
-from openquake.calculators import task_handlers
+from openquake.utils import task_handlers
 
 
 class DummyTask():
