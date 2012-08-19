@@ -81,6 +81,8 @@ class PostProcessor(object):
         curves_per_task = self.curves_per_task()
 
         for imt in self._calculation.intensity_measure_types_and_levels:
+            self._result_writer.imt = imt
+
             chunks_of_curves = self._curve_finder.individual_curves_chunks(
                 imt, curves_per_task)
 
@@ -165,7 +167,7 @@ class PerSiteResultCalculator(object):
 
     def execute(self):
         """
-        Fetch the curves, calculate the mean curves and saves them
+        Fetch the curves, calculate the mean curves and save them
         """
         poe_matrix = self.fetch_curves()
 
@@ -185,7 +187,7 @@ class PerSiteResultCalculator(object):
 
     def save_result(self, location, result):
         """
-        Given a `result` at `location` it saves the result
+        Abstract method. Given a `result` at `location` it saves the result
         """
         raise NotImplementedError
 

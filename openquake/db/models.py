@@ -28,7 +28,6 @@ Model representations of the OpenQuake DB tables.
 
 import os
 import re
-import functools
 
 from collections import namedtuple
 from datetime import datetime
@@ -983,8 +982,15 @@ class OqJobProfile(djm.Model):
 
 
 class OutputManager(djm.Manager):
+    """
+    Manager class to filter and create Output objects
+    """
     def create_output(self, job, display_name, output_type="hazard_curve"):
-        return self.create(job=job,
+        """
+        Create an output for the given `job`, `display_name` and
+        `output_type` (default to hazard_curve)
+        """
+        return self.create(oq_job=job,
                            owner=job.owner,
                            display_name=display_name,
                            output_type=output_type)
@@ -1087,18 +1093,29 @@ def parse_imt(imt):
 
 
 class HazardCurveManager(djm.Manager):
-    def create_aggregate_curve(self, imt, output,
+    """
+    Manager class to filter and create HazardCurve objects
+    """
+
+    def create_aggregate_curve(self, output, imt,
                                statistics="mean", quantile=None):
         """
+        Create an aggregate curve with intensity measure type `imt`
+        for the given `statistics` (default to mean) and `quantile`.
         Here imt is given in long form. e.g. SA(10)
         """
-        hc = output.job.hazard_calculation
+        if quantile and not statistics == "quantile":
+            raise ValueError(
+                "A quantile level can be specified only for quantile curves")
+
+        hc = output.oq_job.hazard_calculation
         hc_im_type, sa_period, sa_damping = parse_imt(imt)
+        levels = hc.intensity_measure_types_and_levels[imt]
         curve = self.create(output=output,
                             lt_realization=None,
                             investigation_time=hc.investigation_time,
                             imt=hc_im_type,
-                            imls=hc.intensity_measure_types_and_levels[imt],
+                            imls=levels,
                             statistics=statistics,
                             quantile=quantile,
                             sa_period=sa_period,
@@ -1133,31 +1150,56 @@ class HazardCurve(djm.Model):
 
 
 class HazardCurveDataManager(djm.Manager):
+    """
+    Manager class to filter and create HazardCurveData objects
+    """
+
     def __init__(self):
         super(HazardCurveDataManager, self).__init__()
         self.current_job = None
 
-    def individual_curves(self, job=None, imt=None):
+    def individual_curves(self, imt=None):
+        """
+        Returns all the individual hazard curve data objects. If `imt`
+        is given the results are filtered by intensity measure type
+        """
+        if not self.current_job:
+            raise ValueError(
+                "Set the current_job attribute to use this method")
         query_args = {'hazard_curve__statistics__isnull': True,
-                      'hazard_curve__output__oq_job': job or self.current_job,
+                      'hazard_curve__output__oq_job': self.current_job,
                       'hazard_curve__output__output_type': "hazard_curve"}
         if imt:
             query_args['hazard_curve__imt'] = imt
         queryset = self.filter(**query_args)
         return queryset
 
-    def individual_curves_ordered(self, job=None, imt=None):
-        return self.individual_curves(job, imt).order_by('location')
+    def individual_curves_ordered(self, imt=None):
+        """
+        Same as #individual_curves but the results are ordered by location
+        """
+        return self.individual_curves(imt).order_by('location')
 
-    def individual_curves_nr(self, job=None, imt=None):
-        return self.individual_curves(job, imt).count()
+    def individual_curves_nr(self, imt=None):
+        """
+        Returns the number of individual curves. If `imt` is given, it
+        returns the number of individual curves with intensity measure
+        type `imt`
+        """
+        return self.individual_curves(imt).count()
 
-    def individual_curves_chunks(self, job=None, imt=None, block_size=1):
-        curve_nr = self.individual_curves_nr(job, imt)
+    def individual_curves_chunks(self, imt=None, block_size=1):
+        """
+        Return a generator of individual curves in chunks. A chunk is
+        function that when invoked (with a parameter `field`) returns a
+        chunk of curves (with values restricted on `field`). E.g.
+
+        all_the_poes = self.individual_curves_chunks().next()('poes')
+        """
+        curve_nr = self.individual_curves_nr(imt)
         ranges = xrange(0, curve_nr, block_size)
 
         chunk_getter = (lambda offset, field: self.individual_curves_ordered(
-            job,
             imt).values_list(field, flat=True)[offset: block_size + offset])
 
         for offset in ranges:
@@ -1182,28 +1224,45 @@ class HazardCurveData(djm.Model):
 
 
 class AggregateCurveManager(object):
+    """
+    Manager to create Aggregate objects.
+
+    :attribute current_job
+      The current job
+
+    :attribute imt
+      The intensity measure type
+    """
     def __init__(self, job, imt):
         self.current_job = job
         self.imt = imt
 
     def create_mean_curve(self, location, poes):
+        """
+        Create a mean curve (both Output, HazardCurve and
+        HazardCurveData)
+        :param location
+          a tuple with lon, lat
+        :param poes
+          a list of poe
+        """
         output = Output.objects.create_output(
             job=self.current_job,
-            display_name="mean curve at %s" % location.wkt)
+            display_name="mean curve at %s" % (location,))
         curve = HazardCurve.objects.create_aggregate_curve(
             imt=self.imt,
             output=output)
         curvedata = HazardCurveData.objects.create(
             hazard_curve=curve,
             poes=poes,
-            location=location)
+            location="POINT(%s %s)" % location)
         return curvedata, curve, output
 
     def create_quantile_curve(self, location, quantile, poes):
         output = Output.objects.create_output(
             job=self.current_job,
             display_name="quantile (poe >= %s) curve at %s" % (
-                quantile, location.wkt))
+                quantile, (location,)))
         curve = HazardCurve.objects.create_aggregate_curve(
             imt=self.imt,
             output=output,
@@ -1212,7 +1271,7 @@ class AggregateCurveManager(object):
         curvedata = HazardCurveData.objects.create(
             hazard_curve=curve,
             poes=poes,
-            location=location)
+            location="POINT(%s %s)" % location)
         return curvedata, curve, output
 
 

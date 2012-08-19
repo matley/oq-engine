@@ -319,10 +319,12 @@ def curve_chunks_getter(db):
 
 class SimpleCurveWriter(object):
     """
-    Simple Curve Writer that stores curves in a list of dictionaries
+    Simple imt-agnostic Curve Writer that stores curves in a list of
+    dictionaries.
     """
     def __init__(self):
         self.curves = []
+        self.imt = None
 
     def create_mean_curve(self, location, poes):
         """
@@ -338,6 +340,7 @@ class SimpleCurveWriter(object):
         self.curves.append(dict(location=location,
                                 quantile=quantile,
                                 poes=poes.tolist()))
+
 
 def _populate_curve_db(location_nr, level_nr, curves_per_location, sigma):
     """
