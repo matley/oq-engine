@@ -94,11 +94,13 @@ class PostProcessor(object):
 
             if self.should_compute_quantile_functions():
                 for chunk_of_curves in chunks_of_curves:
-                    self._task_handler.enqueue(
-                        QuantileCurveCalculator,
-                        curves_per_location=self._curves_per_location,
-                        chunk_of_curves=chunk_of_curves,
-                        curve_writer=self._result_writer)
+                    for quantile in self._calculation.quantile_hazard_curves:
+                        self._task_handler.enqueue(
+                            QuantileCurveCalculator,
+                            curves_per_location=self._curves_per_location,
+                            chunk_of_curves=chunk_of_curves,
+                            curve_writer=self._result_writer,
+                            quantile=quantile)
 
     def execute(self):
         """

@@ -212,7 +212,7 @@ class PostProcessorTestCase(unittest.TestCase):
             'SA(10)': range(1, 10)
             }
         calculation.mean_hazard_curves = True
-        calculation.quantile_hazard_curves = True
+        calculation.quantile_hazard_curves = [0.5, 0.3]
 
         a_post_processor = PostProcessor(calculation,
                                          self.curve_finder,
@@ -222,7 +222,7 @@ class PostProcessorTestCase(unittest.TestCase):
         a_post_processor.initialize()
 
         # Assert
-        expected_task_nr = 2 * 2 * self.task_nr
+        expected_task_nr = 2 * (1 + 2) * self.task_nr
         self.assertEqual(expected_task_nr,
                          self.task_handler.enqueue.call_count)
 
@@ -241,7 +241,7 @@ class PostProcessorTestCase(unittest.TestCase):
             'SA(10)': range(1, 10)
             }
         calculation.mean_hazard_curves = True
-        calculation.quantile_hazard_curves = False
+        calculation.quantile_hazard_curves = None
 
         a_post_processor = PostProcessor(calculation,
                                          self.curve_finder,
