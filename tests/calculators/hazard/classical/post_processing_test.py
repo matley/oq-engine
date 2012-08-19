@@ -135,10 +135,10 @@ class PostProcessorTestCase(unittest.TestCase):
         curve_db = _populate_curve_db(location_nr, 1,
                                       self.curves_per_location, 0)
 
-        self.a_chunk_getter = curve_chunks_getter(curve_db[0: self.chunk_size])
+        self.a_chunk_getter = curve_chunks_getter(curve_db[0: chunk_size])
         self.task_nr = math.ceil(curve_nr / float(chunk_size))
         self.chunk_getters = list(itertools.repeat(
-            self.a_chunk_getter, self.task_nr))
+            self.a_chunk_getter, int(self.task_nr)))
 
         self.curve_finder = mock.Mock()
         self.curve_finder.individual_curve_nr = mock.Mock(
