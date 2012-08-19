@@ -21,8 +21,8 @@
 OO Interface to manage task queueing.
 """
 
-from celery import registry
-from celery.task import task, Task
+from celery.task import task
+from openquake import logs
 from celery.task.sets import TaskSet
 
 
@@ -99,26 +99,16 @@ class CeleryTaskHandler(SimpleTaskHandler):
 
 
 @task
-class CeleryTask(Task):
+def celery_task(a_task):
     """
-    Implements the delegation pattern to separate the concern of
-    concrete task from celery task
+    Delegate to a_task#run just to decouple celery from a concrete
+    task.
+    Log any occurring exception
     """
-
-    def __init__(self):
-        # Do not do anything to honour the celery metaclass magic
-        pass
-
-    @classmethod
-    def run_task(cls, a_task, *args, **kwargs):
-        """
-        Call #run method of a_task passing in *args and **kwargs
-        """
-        return a_task.run(*args, **kwargs)
-
-    def run(self, a_task):
-        """
-        Call #run method of a_task passing in *args and **kwargs
-        """
-        return self.__class__.run_task(a_task)
-CELERY_TASK = registry.tasks[CeleryTask.name]
+    try:
+        return a_task.run()
+    except Exception, err:
+        logs.LOG.critical('Error occurred in task: %s' % str(err))
+        logs.LOG.exception(err)
+        raise err
+CELERY_TASK = celery_task
