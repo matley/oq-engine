@@ -30,12 +30,13 @@ import math
 import mock
 
 from openquake.calculators.hazard.classical.post_processing import (
-    MeanCurveCalculator, PostProcessor)
+    PostProcessor, PerSiteResultCalculator,
+    MeanCurveCalculator, QuantileCurveCalculator)
 
 
 class MeanCurveCalculatorTestCase(unittest.TestCase):
     """
-    Tests for the main methods of the classical hazard post processor.
+    Tests the mean curves calculator.
     """
 
     MAX_LOCATION_NR = 50
@@ -49,10 +50,15 @@ class MeanCurveCalculatorTestCase(unittest.TestCase):
             1,
             self.__class__.MAX_CURVES_PER_LOCATION)
         self.level_nr = random.randint(1, self.__class__.MAX_LEVEL_NR)
-        self.curve_db = _populate_curve_db(self.location_nr,
-                                           self.level_nr,
-                                           self.curves_per_location,
-                                           self.__class__.SIGMA)
+        # set level_nr to an odd value, such that we easily create
+        # poes curves with median == mean
+        if not self.level_nr % 2:
+            self.level_nr += 1
+        self.curve_db, self.location_db = _populate_curve_db(
+            self.location_nr,
+            self.level_nr,
+            self.curves_per_location,
+            self.__class__.SIGMA)
         self.curve_writer = SimpleCurveWriter()
 
     def test_locations(self):
@@ -64,8 +70,7 @@ class MeanCurveCalculatorTestCase(unittest.TestCase):
             curve_writer=self.curve_writer)
 
         locations = list(mean_calculator.locations())
-        expected_locations = [v['location'] for v in self.curve_db]
-        numpy.testing.assert_allclose(expected_locations, locations)
+        numpy.testing.assert_allclose(self.location_db, locations)
 
     def test_fetch_curves(self):
         getter = curve_chunks_getter(self.curve_db)
@@ -105,7 +110,7 @@ class MeanCurveCalculatorTestCase(unittest.TestCase):
 
         expected_mean_curves = [
             dict(location=locations[i],
-                 poes=[i + j for j in range(0, self.level_nr)])
+                 poes=[1. / (1 + i + j) for j in range(0, self.level_nr)])
             for i in range(0, self.location_nr)]
 
         for i in range(0, self.location_nr):
@@ -116,6 +121,50 @@ class MeanCurveCalculatorTestCase(unittest.TestCase):
                 expected_mean_curves[i]['poes'],
                 self.curve_writer.curves[i]['poes'],
                 atol=self.__class__.SIGMA * 10)
+
+
+class QuantileCurveCalculatorTestCase(MeanCurveCalculatorTestCase):
+    """
+    Tests the quantile curves calculator.
+    """
+    def test_execute(self):
+        getter = curve_chunks_getter(self.curve_db)
+
+        # test the median calculation
+        quantile_calculator = QuantileCurveCalculator(
+            curves_per_location=self.curves_per_location,
+            chunk_of_curves=getter,
+            curve_writer=self.curve_writer,
+            quantile=0.5)
+
+        quantile_calculator.execute()
+
+        self.assertAlmostEqual(self.location_nr, len(self.curve_writer.curves))
+
+        expected_quantile_curves = [
+            dict(location=location,
+                 poes=[1. / (1 + i + j) for j in range(0, self.level_nr)])
+            for i, location in enumerate(self.location_db)]
+
+        for i in range(0, self.location_nr):
+            numpy.testing.assert_allclose(
+                expected_quantile_curves[i]['location'],
+                self.curve_writer.curves[i]['location'])
+            numpy.testing.assert_allclose(
+                expected_quantile_curves[i]['poes'],
+                self.curve_writer.curves[i]['poes'],
+                atol=self.__class__.SIGMA * 10)
+
+    def test_base_classes(self):
+        """Test the base class is abstract"""
+        a_calculator = PerSiteResultCalculator(
+            curves_per_location=mock.Mock(),
+            chunk_of_curves=mock.Mock(),
+            curve_writer=mock.Mock())
+        self.assertRaises(NotImplementedError, a_calculator.compute_results,
+                         mock.Mock())
+        self.assertRaises(NotImplementedError, a_calculator.save_result,
+                         mock.Mock(), mock.Mock())
 
 
 class PostProcessorTestCase(unittest.TestCase):
@@ -213,6 +262,10 @@ class PostProcessorTestCase(unittest.TestCase):
                          self.task_handler.enqueue.call_count)
 
     def test_execute(self):
+        """
+        Test that the post processor calls the proper task queue
+        handler methods
+        """
         calculation = mock.Mock()
 
         a_post_processor = PostProcessor(calculation,
@@ -273,11 +326,18 @@ class SimpleCurveWriter(object):
 
     def create_mean_curve(self, location, poes):
         """
-        Implement the Curve writer protocol
+        Implement the mean curve writer protocol
         """
         self.curves.append(dict(location=location,
                                 poes=poes.tolist()))
 
+    def create_quantile_curve(self, location, quantile, poes):
+        """
+        Implement the quantile curve writer protocol
+        """
+        self.curves.append(dict(location=location,
+                                quantile=quantile,
+                                poes=poes.tolist()))
 
 def _populate_curve_db(location_nr, level_nr, curves_per_location, sigma):
     """
@@ -285,13 +345,16 @@ def _populate_curve_db(location_nr, level_nr, curves_per_location, sigma):
     """
     random_location = lambda: random.random() * 360
     curve_db = []
+    location_db = []
 
     for i in range(0, location_nr):
         location = (random_location(), random_location())
-        # let's cheat. mean curve set to [i + j for j in level_indexes]
+        # let's cheat. mean curve poes set to [1 / (1 + i + j) for j
+        # in level_indexes]
+        location_db.append(location)
         curve_db.extend(
             [dict(location=location,
-                  poes=[random.gauss(i + j, sigma)
+                  poes=[random.gauss(1.0 / (1 + i + j), sigma)
                         for j in range(0, level_nr)])
             for _ in range(0, curves_per_location)])
-    return curve_db
+    return curve_db, location_db

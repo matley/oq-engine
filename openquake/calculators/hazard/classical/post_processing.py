@@ -21,6 +21,7 @@ Post processing functionality for the classical PSHA hazard calculator.
 """
 
 import numpy
+from scipy.stats.mstats import mquantiles
 
 
 class PostProcessor(object):
@@ -43,8 +44,8 @@ class PostProcessor(object):
       It should implement the methods #individual_curve_nr and
       #individual_curve_chunks
 
-    :attribute _curve_writer
-      An object used to save aggregate hazard curves.
+    :attribute _result_writer
+      An object used to save aggregate results.
       It should implement the methods #create_mean_curve and
       #create_quantile_curves
 
@@ -64,7 +65,7 @@ class PostProcessor(object):
                  curve_finder=None, curve_writer=None, task_handler=None):
         self._calculation = hc
         self._curve_finder = curve_finder
-        self._curve_writer = curve_writer
+        self._result_writer = curve_writer
         self._task_handler = task_handler
         self._curves_per_location = hc.individual_curves_per_location()
 
@@ -89,7 +90,7 @@ class PostProcessor(object):
                         MeanCurveCalculator,
                         curves_per_location=self._curves_per_location,
                         chunk_of_curves=chunk_of_curves,
-                        curve_writer=self._curve_writer)
+                        curve_writer=self._result_writer)
 
             if self.should_compute_quantile_functions():
                 for chunk_of_curves in chunks_of_curves:
@@ -97,7 +98,7 @@ class PostProcessor(object):
                         QuantileCurveCalculator,
                         curves_per_location=self._curves_per_location,
                         chunk_of_curves=chunk_of_curves,
-                        curve_writer=self._curve_writer)
+                        curve_writer=self._result_writer)
 
     def execute(self):
         """
@@ -137,27 +138,28 @@ class PostProcessor(object):
         return block_size * chunk_size
 
 
-class MeanCurveCalculator(object):
+class PerSiteResultCalculator(object):
     """
-    Calculate mean curves.
+    Abstract class to calculate per-site result (e.g. mean curves).
 
     :attribute _curves_per_location
-      the number of curves for each location considered for mean
+      the number of curves for each location considered for
       calculation
 
-    :attribute _chunk_of_curves
-      a list of individual curve chunks (usually spanning more
-      locations). Each chunk is a function that actually fetches the
-      curves when it is invoked.
+    :attribute _chunk_of_curves a list of individual curve chunks
+      (usually spanning more locations). Each chunk is a function that
+      actually fetches the curves when it is invoked. This function
+      accept a parameter `field` that can be "poes" to fetch the y
+      values and "location" the fetch the x values.
 
-    :attribute _curve_writer
-      an object that can save the result by calling #create_mean_curve
+    :attribute _result_writer
+      an object that can save the result
     """
     def __init__(self, curves_per_location, chunk_of_curves,
                  curve_writer):
         self._chunk_of_curves = chunk_of_curves
         self._curves_per_location = curves_per_location
-        self._curve_writer = curve_writer
+        self._result_writer = curve_writer
 
     def execute(self):
         """
@@ -165,18 +167,33 @@ class MeanCurveCalculator(object):
         """
         poe_matrix = self.fetch_curves()
 
-        mean_curves = numpy.mean(poe_matrix, 0)
+        results = self.compute_results(poe_matrix)
 
-        for mean_curve in mean_curves:
-            location = self.locations().next()
-            self._curve_writer.create_mean_curve(location, mean_curve)
+        for i, location in enumerate(self.locations()):
+            result = results[i]
+            self.save_result(location, result)
+
+    def compute_results(self, poe_matrix):
+        """
+        Abstract method. Given a 3d matrix with shape
+        (curves_per_location x number of locations x levels))
+        compute a result for each location
+        """
+        raise NotImplementedError
+
+    def save_result(self, location, result):
+        """
+        Given a `result` at `location` it saves the result
+        """
+        raise NotImplementedError
 
     def locations(self):
         """
         A generator of locations considered by the computation
         """
         locations = self._chunk_of_curves('location')
-        for location in locations:
+        distinct_locations = locations[::self._curves_per_location]
+        for location in distinct_locations:
             yield location
 
     def fetch_curves(self):
@@ -192,15 +209,65 @@ class MeanCurveCalculator(object):
                              'F')
 
 
-class QuantileCurveCalculator(object):
+class MeanCurveCalculator(PerSiteResultCalculator):
     """
-    TBI
-    """
-    def __init__(self, *args):
-        raise NotImplementedError
+    Calculate mean curves.
 
-    def execute(self):
+    :attribute _result_writer
+      an object that can save the result by calling #create_mean_curve
+
+    See the base class doc for other attributes
+    """
+    def __init__(self, curves_per_location, chunk_of_curves,
+                 curve_writer):
+        super(MeanCurveCalculator, self).__init__(
+            curves_per_location,
+            chunk_of_curves,
+            curve_writer)
+
+    def compute_results(self, poe_matrix):
         """
-        tbi
+        Calculate all the mean curves in one shot
         """
-        raise NotImplementedError
+        return numpy.mean(poe_matrix, axis=0)
+
+    def save_result(self, location, mean_curve):
+        """
+        Save the mean curve.
+        """
+        self._result_writer.create_mean_curve(location, mean_curve)
+
+
+class QuantileCurveCalculator(PerSiteResultCalculator):
+    """
+    Compute quantile curves for a block of locations
+    """
+    def __init__(self, curves_per_location, chunk_of_curves, curve_writer,
+                 quantile):
+        super(QuantileCurveCalculator, self).__init__(
+            curves_per_location,
+            chunk_of_curves,
+            curve_writer)
+
+        self._quantile = quantile
+
+    def compute_results(self, poe_matrix):
+        """
+        Compute all the quantile function (for quantiles given by the
+        attribute `quantile`) for each location in one shot
+        """
+
+        # mquantiles can not work on 3d matrixes, so we roll back the
+        # location axis as first dimension, then we iterate on each
+        # locations
+        poe_matrixes = numpy.rollaxis(poe_matrix, 1, 0)
+        return [mquantiles(curves, self._quantile, axis=0)[0]
+                for curves in poe_matrixes]
+
+    def save_result(self, location, quantile_curve):
+        """
+        Save a quantile curve
+        """
+        self._result_writer.create_quantile_curve(location,
+                                                 self._quantile,
+                                                 quantile_curve)
