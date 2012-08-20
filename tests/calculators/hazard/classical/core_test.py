@@ -256,6 +256,8 @@ class ClassicalHazardCalculatorTestCase(unittest.TestCase):
         sd = models.SiteData.objects.filter(hazard_calculation=hc.id)
         self.assertEqual(0, len(sd))
 
+        self.calc.post_process()
+
     def test_hazard_curves_task(self):
         # Test the `hazard_curves` task, but execute it as a normal function
         # (for purposes of test coverage).

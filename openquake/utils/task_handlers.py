@@ -24,7 +24,7 @@ OO Interface to manage task queueing.
 from celery.task import task
 from openquake import logs
 from celery.task.sets import TaskSet
-
+import traceback
 
 class SimpleTaskHandler(object):
     """
@@ -108,6 +108,7 @@ def celery_task(a_task):
     try:
         return a_task.run()
     except Exception, err:
+        logs.LOG.debug(traceback.format_exc())
         logs.LOG.critical('Error occurred in task %s: %s' % (
             a_task, str(err)))
         logs.LOG.exception(err)

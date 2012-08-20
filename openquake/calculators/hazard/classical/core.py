@@ -534,10 +534,10 @@ class ClassicalHazardCalculator(base.CalculatorNext):
         post_processor = PostProcessor(
             self.job.hazard_calculation,
             curve_finder=curve_finder,
-            curve_writer=models.AggregateCurveManager(self.job),
+            curve_writer=models.AggregateResultWriter(self.job),
             task_handler=CeleryTaskHandler())
         post_processor.initialize()
-        post_processor.execute()
+        post_processor.run()
 
 
 @utils_tasks.oqtask

@@ -34,7 +34,7 @@ class PostProcessor(object):
     The instances of this class should used with the following protocol:
     a_post_processor = PostProcessor(...)
     a_post_processor.initialize() # divide the calculation in subtasks
-    a_post_processor.execute() # execute subtasks
+    a_post_processor.run() # execute subtasks
 
     :attribute _calculation
       The hazard calculation object with the configuration of the calculation
@@ -104,7 +104,7 @@ class PostProcessor(object):
                             curve_writer=self._result_writer,
                             quantile=quantile)
 
-    def execute(self):
+    def run(self):
         """
         Execute the calculation using the task queue handler
         """
@@ -165,7 +165,7 @@ class PerSiteResultCalculator(object):
         self._curves_per_location = curves_per_location
         self._result_writer = curve_writer
 
-    def execute(self):
+    def run(self):
         """
         Fetch the curves, calculate the mean curves and save them
         """

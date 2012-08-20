@@ -85,13 +85,13 @@ class HazardCurveManagerTestCase(TestCaseWithAJob):
                           self.output, "SA(10)", quantile=0.5)
 
 
-class AggregateCurveManager(TestCaseWithAJob):
+class AggregateResultWriterTestCase(TestCaseWithAJob):
     """
-    Test the manager to create aggregate hazard curve data objects
+    Test the manager to create aggregate result writer
     """
     def setUp(self):
-        super(AggregateCurveManager, self).setUp()
-        self.manager = openquake.AggregateCurveManager(self.job, "PGA")
+        super(AggregateResultWriterTestCase, self).setUp()
+        self.manager = openquake.AggregateResultWriter(self.job, "PGA")
 
     def test_create_mean_curve(self):
         a_location = (random.random(), random.random())

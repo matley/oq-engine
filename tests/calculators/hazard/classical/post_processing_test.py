@@ -95,7 +95,7 @@ class MeanCurveCalculatorTestCase(unittest.TestCase):
                         self.curve_db[index]['poes'][z],
                         poe_matrix[y][x][z])
 
-    def test_execute(self):
+    def test_run(self):
         getter = curve_chunks_getter(self.curve_db)
 
         mean_calculator = MeanCurveCalculator(
@@ -103,7 +103,7 @@ class MeanCurveCalculatorTestCase(unittest.TestCase):
             chunk_of_curves=getter,
             curve_writer=self.curve_writer)
 
-        mean_calculator.execute()
+        mean_calculator.run()
 
         self.assertAlmostEqual(self.location_nr, len(self.curve_writer.curves))
         locations = [v['location'] for v in self.curve_writer.curves]
@@ -127,7 +127,7 @@ class QuantileCurveCalculatorTestCase(MeanCurveCalculatorTestCase):
     """
     Tests the quantile curves calculator.
     """
-    def test_execute(self):
+    def test_run(self):
         getter = curve_chunks_getter(self.curve_db)
 
         # test the median calculation
@@ -137,7 +137,7 @@ class QuantileCurveCalculatorTestCase(MeanCurveCalculatorTestCase):
             curve_writer=self.curve_writer,
             quantile=0.5)
 
-        quantile_calculator.execute()
+        quantile_calculator.run()
 
         self.assertAlmostEqual(self.location_nr, len(self.curve_writer.curves))
 
@@ -261,7 +261,7 @@ class PostProcessorTestCase(unittest.TestCase):
         self.assertEqual(expected_task_nr,
                          self.task_handler.enqueue.call_count)
 
-    def test_execute(self):
+    def test_run(self):
         """
         Test that the post processor calls the proper task queue
         handler methods
@@ -274,12 +274,12 @@ class PostProcessorTestCase(unittest.TestCase):
                                          self.task_handler)
         a_post_processor.should_be_distributed = mock.MagicMock(
             return_value=True, name="should_be_distributed")
-        a_post_processor.execute()
+        a_post_processor.run()
         self.assertEqual(self.task_handler.apply_async.call_count, 1)
         self.assertEqual(self.task_handler.wait_for_results.call_count, 1)
 
         a_post_processor.should_be_distributed.return_value = False
-        a_post_processor.execute()
+        a_post_processor.run()
         self.assertEqual(self.task_handler.apply_async.call_count, 1)
         self.assertEqual(self.task_handler.wait_for_results.call_count, 1)
         self.assertEqual(self.task_handler.apply.call_count, 1)

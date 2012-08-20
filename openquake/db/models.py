@@ -1234,9 +1234,12 @@ class HazardCurveData(djm.Model):
         db_table = 'hzrdr\".\"hazard_curve_data'
 
 
-class AggregateCurveManager(object):
+class AggregateResultWriter(object):
     """
     Manager to create Aggregate objects.
+
+    Before using any method of this class you need to set up the
+    instance attribute imt
 
     :attribute current_job
       The current job
@@ -1244,7 +1247,7 @@ class AggregateCurveManager(object):
     :attribute imt
       The intensity measure type
     """
-    def __init__(self, job, imt):
+    def __init__(self, job, imt=None):
         self.current_job = job
         self.imt = imt
 
